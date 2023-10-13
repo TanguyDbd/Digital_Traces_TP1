@@ -1,5 +1,9 @@
-from flask import Flask, request
+from flask import Flask, request, render_template
 import logging
+import requests
+
+from google.oauth2 import service_account
+from googleapiclient.discovery import build
 
 app = Flask(__name__)
 
@@ -28,7 +32,7 @@ def log():
     app.logger.info(log_msg)
 
     if request.method == 'POST':
-        # Récupérer le texte entré dans la boîte de texte
+        # Retreive the message in the textbox
         text_from_textbox = request.form['textbox']
 
         # Print a message in the browser console with the text from the text box
@@ -46,7 +50,7 @@ def log():
         </script>
         """
 
-    # Formulaire HTML avec une boîte de texte and a button
+    # HTML form with a textbox and a button
     form = """
     <form method="POST">
         <label for="textbox">Text Box :</label><br>
@@ -55,17 +59,75 @@ def log():
         <button type="button" onclick="makeGoogleRequest()">Faire une requête Google</button>
     </form>
     """
+    return log_msg + browser_log + form
 
-    # JavaScript function to make the Google request
-    google_request_script = """
-    <script>
-        function makeGoogleRequest() {
-            fetch("https://www.google.com/")
-                .then(response => response.text())
-                .then(data => console.log("Google Response:", data))
-                .catch(error => console.error("Error making Google request:", error));
-        }
-    </script>
+@app.route('/google-request', methods=['GET'])
+def google_request():
+    # Render a form with a button to make the Google request
+    return """
+    <form method="GET" action="/perform-google-request">
+        <input type="submit" value="Display Google Analytics Dashboard of this App">
+    </form>
+    <form method="GET" action="/perform-google-request-cookies">
+        <input type="submit" value="Check Google Analytics Request Cookies">
+    </form>
     """
 
-    return log_msg + browser_log + form + google_request_script
+@app.route('/perform-google-request', methods=['GET'])
+def perform_google_request():
+    # Question
+    google_url = "https://www.google.com/"
+    google_analytics_url = "https://analytics.google.com/analytics/web/?pli=1#/p407459024/reports/intelligenthome"
+    
+    try:
+        response = requests.get(google_analytics_url)
+        response.raise_for_status()  # Raise an exception for HTTP errors
+
+        return response.text
+    except requests.exceptions.RequestException as e:
+        return f"Error making Google Analytics request: {str(e)}"
+
+@app.route('/perform-google-request-cookies', methods=['GET'])
+def perform_google_request_cookies():
+    google_url = "https://www.google.com/"
+    google_analytics_url = "https://analytics.google.com/analytics/web/?pli=1#/p407459024/reports/intelligenthome"
+    
+    try:
+        response = requests.get(google_analytics_url)
+        response.raise_for_status()  # Raise an exception for HTTP errors
+
+        # Retrieve cookies of the response
+        cookies = response.cookies
+
+        # Send cookies to the template for display
+        return render_template('cookies.html', cookies=cookies)
+    except requests.exceptions.RequestException as e:
+        return f"Error making Google Analytics Cookies request: {str(e)}"
+
+
+@app.route('/fetch-google-analytics-data', methods=['GET'])
+def fetch_google_analytics_data():
+    SCOPES = ['https://www.googleapis.com/auth/analytics.readonly']
+    SERVICE_ACCOUNT_FILE = 'data-traces-lab2-6ea184d3105e.json'
+
+    credentials = service_account.Credentials.from_service_account_file(
+        SERVICE_ACCOUNT_FILE, scopes=SCOPES)
+
+    service = build('analytics', 'v3', credentials=credentials)
+
+    # Acess the google analytics data
+    def get_visitor_count(service):
+        response = service.data().realtime().get(
+            ids='ga:407459024',
+            metrics='ga:activeVisitors',
+        ).execute()
+        return response
+
+    # Retreive info about the number of visitor
+    visitor_data = get_visitor_count(service)
+    visitor_count = visitor_data.get('rows', [])[0][0]
+
+    return f'Nombre de visiteurs actifs : {visitor_count}'
+
+if __name__ == '__main__':
+    app.run(debug=True)
