@@ -1,9 +1,11 @@
 from flask import Flask, request, render_template
 import logging
 import requests
+import os
 
-from google.oauth2 import service_account
-from googleapiclient.discovery import build
+from google.analytics.data_v1beta import BetaAnalyticsDataClient
+from google.analytics.data_v1beta.types import RunReportRequest
+
 
 app = Flask(__name__)
 
@@ -56,7 +58,6 @@ def log():
         <label for="textbox">Text Box :</label><br>
         <input type="text" id="textbox" name="textbox"><br><br>
         <input type="submit" value="Soumettre">
-        <button type="button" onclick="makeGoogleRequest()">Faire une requête Google</button>
     </form>
     """
     return log_msg + browser_log + form
@@ -75,8 +76,9 @@ def google_request():
 
 @app.route('/perform-google-request', methods=['GET'])
 def perform_google_request():
-    # Question
+    # Question 2.
     google_url = "https://www.google.com/"
+    # Quenstion 4.
     google_analytics_url = "https://analytics.google.com/analytics/web/?pli=1#/p407459024/reports/intelligenthome"
     
     try:
@@ -89,7 +91,9 @@ def perform_google_request():
 
 @app.route('/perform-google-request-cookies', methods=['GET'])
 def perform_google_request_cookies():
+    # Question 2.
     google_url = "https://www.google.com/"
+    # Question 4.
     google_analytics_url = "https://analytics.google.com/analytics/web/?pli=1#/p407459024/reports/intelligenthome"
     
     try:
@@ -107,27 +111,34 @@ def perform_google_request_cookies():
 
 @app.route('/fetch-google-analytics-data', methods=['GET'])
 def fetch_google_analytics_data():
-    SCOPES = ['https://www.googleapis.com/auth/analytics.readonly']
-    SERVICE_ACCOUNT_FILE = 'data-traces-lab2-6ea184d3105e.json'
 
-    credentials = service_account.Credentials.from_service_account_file(
-        SERVICE_ACCOUNT_FILE, scopes=SCOPES)
+    os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = 'data-traces-lab2-6ea184d3105e.json'
+    PROPERTY_GA4_ID = '407459024'
+    starting_date = "28daysAgo"
+    ending_date = "yesterday"
 
-    service = build('analytics', 'v3', credentials=credentials)
-
-    # Acess the google analytics data
-    def get_visitor_count(service):
-        response = service.data().realtime().get(
-            ids='ga:407459024',
-            metrics='ga:activeVisitors',
-        ).execute()
+    client = BetaAnalyticsDataClient()
+    
+    # Function that return the request from the google analytics API
+    def get_visitor_count(client, property_id):
+        request = RunReportRequest(
+            property=f"properties/{property_id}",
+            date_ranges=[{"start_date": starting_date, "end_date": ending_date}],
+            metrics=[{"name": "activeUsers"}]
+        )
+        response = client.run_report(request)
         return response
 
-    # Retreive info about the number of visitor
-    visitor_data = get_visitor_count(service)
-    visitor_count = visitor_data.get('rows', [])[0][0]
+    # Get the active visitor count using the function
+    response = get_visitor_count(client, PROPERTY_GA4_ID)
 
-    return f'Nombre de visiteurs actifs : {visitor_count}'
+    # Display the number of active visitors
+    if response and response.row_count > 0:
+        metric_value = response.rows[0].metric_values[0].value
+    else:
+        metric_value = "N/A"  # Handle the case where there is no data
+
+    return f'Number of active visitors : {metric_value}'
 
 if __name__ == '__main__':
     app.run(debug=True)
