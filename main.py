@@ -1,11 +1,15 @@
 from flask import Flask, request, render_template
+from io import BytesIO
+import base64
 import logging
 import requests
 import os
-
+import numpy as np
+import timelog
 from google.analytics.data_v1beta import BetaAnalyticsDataClient
 from google.analytics.data_v1beta.types import RunReportRequest
-
+from pytrends.request import TrendReq
+from matplotlib import pyplot as plt
 
 app = Flask(__name__)
 
@@ -23,10 +27,26 @@ src="https://www.googletagmanager.com/gtag/js?id=G-GV4KJPM75M"></script>
 </script>
  """
 
+# Main page of our web application
 @app.route("/")
 def hello_world():
-    return prefix_google + "Hello World main page"
+    return prefix_google + "Main page of Tanguy's web Application for Data Traces labs" + """
+    <form method="GET" action="/logger">
+        <input type="submit" value="Go to the logger page">
+    </form>
+    <form method="GET" action="/google-request">
+        <input type="submit" value="Go to the Google Analytics Requests page">
+    </form>
+    <form method="GET" action="/trend-chart">
+        <input type="submit" value="Go to google trends data">
+    </form>
+    <form method="GET" action="/timerlog_experiment">
+        <input type="submit" value="Go to the timerlog experiment">
+    </form>
+    """
 
+
+# TP2 Test the python logger part
 @app.route("/logger", methods=['GET', 'POST'])
 def log():
     # Print a message in Python
@@ -62,6 +82,7 @@ def log():
     """
     return log_msg + browser_log + form
 
+# TP2 Manipulate cookies part
 @app.route('/google-request', methods=['GET'])
 def google_request():
     # Render a form with a button to make the Google request
@@ -74,6 +95,7 @@ def google_request():
     </form>
     """
 
+# TP2 Manipulate cookies part
 @app.route('/perform-google-request', methods=['GET'])
 def perform_google_request():
     # Question 2.
@@ -89,6 +111,7 @@ def perform_google_request():
     except requests.exceptions.RequestException as e:
         return f"Error making Google Analytics request: {str(e)}"
 
+# TP2 Manipulate cookies part
 @app.route('/perform-google-request-cookies', methods=['GET'])
 def perform_google_request_cookies():
     # Question 2.
@@ -108,7 +131,7 @@ def perform_google_request_cookies():
     except requests.exceptions.RequestException as e:
         return f"Error making Google Analytics Cookies request: {str(e)}"
 
-
+# TP2 Request with oauth part (but not with oauth)
 @app.route('/fetch-google-analytics-data', methods=['GET'])
 def fetch_google_analytics_data():
 
@@ -139,6 +162,83 @@ def fetch_google_analytics_data():
         metric_value = "N/A"  # Handle the case where there is no data
 
     return f'Number of active visitors : {metric_value}'
+
+
+
+# TP3 Google trend part
+@app.route('/trend-chart')
+def chart_data():
+    pytrends = TrendReq(hl='en-US', tz=360)
+    keywords = ["basketball", "handball"]
+    pytrends.build_payload(keywords, timeframe='2023-01-01 2023-10-20')
+    data = pytrends.interest_over_time()
+
+    # Plot the trends
+    plt.figure(figsize=(10, 4))
+    plt.plot(data.index, data['basketball'], label='Basketball')
+    plt.plot(data.index, data['handball'], label='Handball')
+    plt.xlabel('Date')
+    plt.ylabel('Number of searchs')
+    plt.title('Google Trends Data on basketball and handball comparison')
+    plt.legend()
+
+    # Convert the plot for embedding in a web page
+    buffer = BytesIO()
+    plt.savefig(buffer, format='png')
+    plt.close()
+    buffer.seek(0)
+    plot_data = base64.b64encode(buffer.read()).decode()
+
+    return render_template('chart.html', plot_data=plot_data)
+
+# TP3 Timer log part
+@app.route('/timerlog_experiment', methods=['GET'])
+def word_count_experiment():
+
+    with open('shakespeare.txt', 'r') as file:
+        text = file.read()
+
+    # Create lists to store execution times and results
+    exec_times_dict = []
+    exec_times_counter = []
+
+    # Run 100 times
+    for _ in range(100):
+        result_dict, exec_time_dict = timelog.count_dict(text)
+        result_counter, exec_time_counter = timelog.count_counter(text)
+
+        exec_times_dict.append((result_dict, exec_time_dict))
+        exec_times_counter.append((result_counter, exec_time_counter))
+
+    # Extract execution times from results
+    exec_times_dict = [exec_time for _, exec_time in exec_times_dict]
+    exec_times_counter = [exec_time for _, exec_time in exec_times_counter]
+
+    # Compute mean and variance for each case
+    mean_dict = np.mean(exec_times_dict)
+    var_dict = np.var(exec_times_dict)
+    mean_counter = np.mean(exec_times_counter)
+    var_counter = np.var(exec_times_counter)
+
+    # Create a boxplot
+    data = [exec_times_dict, exec_times_counter]
+    labels = ['Using Dictionary\nMean: {:.2f}\nVariance: {:.2f}'.format(mean_dict, var_dict),
+            'Using Counter\nMean: {:.2f}\nVariance: {:.2f}'.format(mean_counter, var_counter)]
+
+    plt.boxplot(data, labels=labels)
+    plt.ylabel('Execution Time in sec')
+    plt.title('Execution Time Distributions')
+    plt.grid(True)
+
+    # Convert the plot for embedding in a web page
+    buffer = BytesIO()
+    plt.savefig(buffer, format='png')
+    plt.close()
+    buffer.seek(0)
+    plot_data = base64.b64encode(buffer.read()).decode()
+
+    return render_template('word_count_result.html', plot_data=plot_data)
+
 
 if __name__ == '__main__':
     app.run(debug=True)

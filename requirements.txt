@@ -1,2 +1,6 @@
 Flask
+requests
+google-analytics-data
+pytrends
 gunicorn
+# matplotlib
